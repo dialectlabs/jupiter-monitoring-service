@@ -1,93 +1,321 @@
-import { program } from '@project-serum/anchor/dist/cjs/spl/token';
+import * as anchor from '@project-serum/anchor';
 import {
-  getAllProposals,
-  getAllTokenOwnerRecords,
-  getRealms,
-  getTokenOwnerRecordsByOwner,
-  ProgramAccount,
-  Proposal,
-  Realm,
-  getTokenOwnerRecordForRealm,
-  getTokenOwnerRecord,
-} from '@solana/spl-governance';
-import { Connection, PublicKey } from '@solana/web3.js';
+  AccountMeta,
+  ParsedMessageAccount,
+  Connection,
+  PublicKey,
+  PartiallyDecodedInstruction,
+} from '@solana/web3.js';
+import { IDL } from '../idl/jupiter';
+import { BorshCoder } from '@project-serum/anchor';
+import type { ParsedAccountData } from '@solana/web3.js';
+import type { Instruction } from '@project-serum/anchor';
+import { InstructionDisplay } from '@project-serum/anchor/dist/cjs/coder/borsh/instruction';
+import { TokenListProvider } from '@solana/spl-token-registry';
+import { token } from '@project-serum/anchor/dist/cjs/utils';
+
+const accountNamesMapping: any = {
+  tokenSwap: {
+    source: sentenceCase('source'),
+    destination: sentenceCase('destination'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  mercurialExchange: {
+    source: sentenceCase('sourceTokenAccount'),
+    destination: sentenceCase('destinationTokenAccount'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  serumSwap: {
+    source: sentenceCase('orderPayerTokenAccount'),
+    coin: sentenceCase('coinWallet'),
+    pc: sentenceCase('pcWallet'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  stepTokenSwap: {
+    source: sentenceCase('source'),
+    destination: sentenceCase('destination'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  saberExchange: {
+    source: sentenceCase('inputUserAccount'),
+    destination: sentenceCase('outputUserAccount'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  cropperTokenSwap: {
+    source: sentenceCase('source'),
+    destination: sentenceCase('destination'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  raydiumSwap: {
+    source: sentenceCase('userSourceTokenAccount'),
+    destination: sentenceCase('userDestinationTokenAccount'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  raydiumSwapV2: {
+    source: sentenceCase('userSourceTokenAccount'),
+    destination: sentenceCase('userDestinationTokenAccount'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  aldrinSwap: {
+    base: sentenceCase('userBaseTokenAccount'),
+    quote: sentenceCase('userQuoteTokenAccount'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  aldrinV2Swap: {
+    base: sentenceCase('userBaseTokenAccount'),
+    quote: sentenceCase('userQuoteTokenAccount'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  cremaTokenSwap: {
+    source: sentenceCase('userSourceTokenAccount'),
+    destination: sentenceCase('userDestinationTokenAccount'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+  senchaExchange: {
+    source: sentenceCase('inputUserAccount'),
+    destination: sentenceCase('outputUserAccount'),
+    tokenProgram: sentenceCase('tokenProgram'),
+  },
+};
+
+// This methods will extract the user sender and receiver token accounts for each instruction
+function getSenderAndReceiverTokenAccounts(
+  accountKeys: ParsedMessageAccount[],
+  instruction: PartiallyDecodedInstruction,
+) {
+  if (!instruction || !instruction.accounts) {
+    return null;
+  }
+
+  const coder = new BorshCoder(IDL);
+  const accountMetas: AccountMeta[] = instruction.accounts.map((pubkey) => {
+    const accountKey = accountKeys.find((ak) => {
+      return ak.pubkey.equals(pubkey);
+    });
+
+    return {
+      pubkey,
+      isSigner: accountKey ? accountKey.signer : false,
+      isWritable: accountKey ? accountKey.writable : false,
+    };
+  });
+
+  const ix = coder.instruction.decode(instruction.data, 'base58');
+
+  if (ix == null) {
+    return;
+  }
+
+  if (!Object.keys(accountNamesMapping).includes(ix.name)) {
+    return null;
+  }
+
+  const format = coder.instruction.format(ix, accountMetas);
+
+  if (format == null) {
+    return;
+  }
+
+  return extractSenderAndReceiverTokenAccounts(ix, format);
+}
+
+function sentenceCase(field: string): string {
+  const result = field.replace(/([A-Z])/g, ' $1');
+  return result.charAt(0).toUpperCase() + result.slice(1);
+}
+
+function extractSenderAndReceiverTokenAccounts(
+  ix: Instruction,
+  format: InstructionDisplay,
+) {
+  const accountMapping = accountNamesMapping[ix.name];
+  if (!accountMapping) {
+    return null;
+  }
+
+  let source: PublicKey | undefined;
+  let destination: PublicKey | undefined;
+  let tokenProgram: PublicKey | undefined;
+  let inAmount: string | undefined;
+  let minimumOutAmount: string | undefined;
+
+  const ixData: any = ix.data;
+  // console.log("inamount: ", format.args)
+  // console.log("format: ", format);
+
+  if (!format) {
+    return null;
+  }
+
+  // Serum destination token account depends on the source token account
+  if (ix.name === 'serumSwap') {
+    source = format.accounts.find(
+      ({ name }) => name === accountMapping['source'],
+    )?.pubkey;
+    let coin = format.accounts.find(
+      ({ name }) => name === accountMapping['coin'],
+    )?.pubkey;
+    let pc = format.accounts.find(
+      ({ name }) => name === accountMapping['pc'],
+    )?.pubkey;
+    tokenProgram = format.accounts.find(
+      ({ name }) => name === accountMapping['tokenProgram'],
+    )?.pubkey;
+
+    if (coin != null && source != null) {
+      destination = coin.equals(source) ? pc : coin;
+    }
+
+    inAmount = format.args.find(({ name }) => name === 'inAmount')?.data;
+    minimumOutAmount = format.args.find(
+      ({ name }) => name === 'minimumOutAmount',
+    )?.data;
+  } else if (ix.name === 'aldrinV2Swap' || ix.name == 'aldrinSwap') {
+    let sourceKey = (ix.data as any).side.bid ? 'quote' : 'base';
+    let destinationKey = (ix.data as any).side.bid ? 'base' : 'quote';
+
+    source = format.accounts.find(
+      ({ name }) => name === accountMapping[sourceKey],
+    )?.pubkey;
+    destination = format.accounts.find(
+      ({ name }) => name === accountMapping[destinationKey],
+    )?.pubkey;
+
+    tokenProgram = format.accounts.find(
+      ({ name }) => name === accountMapping['tokenProgram'],
+    )?.pubkey;
+
+    inAmount = format.args.find(({ name }) => name === 'inAmount')?.data;
+    minimumOutAmount = format.args.find(
+      ({ name }) => name === 'minimumOutAmount',
+    )?.data;
+  } else {
+    source = format.accounts.find(
+      ({ name }) => name === accountMapping['source'],
+    )?.pubkey;
+    destination = format.accounts.find(
+      ({ name }) => name === accountMapping['destination'],
+    )?.pubkey;
+
+    tokenProgram = format.accounts.find(
+      ({ name }) => name === accountMapping['tokenProgram'],
+    )?.pubkey;
+
+    inAmount = format.args.find(({ name }) => name === 'inAmount')?.data;
+    minimumOutAmount = format.args.find(
+      ({ name }) => name === 'minimumOutAmount',
+    )?.data;
+  }
+
+  if (!source || !destination || !tokenProgram) {
+    return null;
+  }
+
+  return {
+    source,
+    destination,
+    inAmount,
+    minimumOutAmount,
+    tokenProgram,
+  };
+}
 
 async function run() {
   const connection = new Connection(process.env.RPC_URL!);
-  const programId = new PublicKey(
-    'GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw',
+  const jupiterV2ProgramId = new PublicKey(
+    'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo',
   );
 
-  const realms = await getRealms(connection, programId);
+  const signatures = await connection.getConfirmedSignaturesForAddress2(
+    jupiterV2ProgramId,
+  );
 
-  const owner = await getTokenOwnerRecord(connection, new PublicKey('57xLoAzt4RekTATUqf937BKk1HxPPJfsnrzzC3gcpnjE'));
+  console.log('signatures: ', signatures.length);
 
-  console.log(realms.length);
-  console.log("owner address: ", owner.account.governingTokenOwner.toBase58());
+  const txs = await Promise.all(
+    signatures.map(
+      async (signature) =>
+        await connection.getParsedConfirmedTransaction(signature.signature),
+    ),
+  );
 
-  // const programAccounts = await connection.getProgramAccounts(
-  //   programId,
-  // );
+  const tokenListProvider = new TokenListProvider();
 
-  // console.log(programAccounts);
-  // console.log(programAccounts[0].account.owner.toBase58());
+  const allTokens = await tokenListProvider.resolve();
 
-  // Fetch all the realms data
-  // If a realm has a new proposal -> votingProposalCount if it increases
-  // Get the new proposal(s) and tweet about it
+  const tokensList = allTokens.filterByClusterSlug('mainnet-beta').getList();
 
-  // let promises = realms.map(realm => {
-  //   return getAllProposals(connection, programId, realm.pubkey);
-  // });
+  console.log('txs: ', txs[0]?.transaction.message);
 
-  // const realmsPromises = realms.map(async realm => {
-  //   return {
-  //     realm: realm,
-  //     proposals: (await getAllProposals(connection, programId, realm.pubkey)).flat(),
-  //     tokenOwnerRecords: await getAllTokenOwnerRecords(connection, programId, realm.pubkey),
-  //   };
-  // });
+  // const transactions = await connection.getTransaction(signatures[0].signature);
 
-  // await Promise.all(realmsPromises);
-  for (const realm of realms) {
-    if (realm.account.votingProposalCount > 0) {
-      console.log('name: ', realm.account.name);
-      console.log('accountType: ', realm.account.accountType);
-      console.log('votingProposalCount: ', realm.account.votingProposalCount);
-      console.log('realm all: ', realm);
+  console.log('done fetching transactions we have ', txs.length);
 
-      const proposals = (await getAllProposals(
-        connection,
-        programId,
-        realm.pubkey,
-      )).flat();
+  for (let i = 0; i < txs.length; i++) {
+    // const signature = signatures[i];
 
-      // for (const proposal of proposals) {
-      //   console.log("proposal: ", proposal.account);
-      //   console.log(`https://realms.today/dao/${realm.pubkey.toBase58()}/proposal/${proposal.pubkey.toBase58()}`);
+    const tx = txs[i];
 
-      //   console.log("proposal owner wrong ", proposal.account.tokenOwnerRecord.toBase58());
-      //   const owner = await getTokenOwnerRecord(connection, proposal.account.tokenOwnerRecord);
-      //   console.log("proposal owner correct ", owner.account);
-      // }
+    if (tx != null) {
+      const ix = tx.transaction.message
+        .instructions[2] as PartiallyDecodedInstruction;
 
-      // const tokenOwnerRecords = await getAllTokenOwnerRecords(
-      //   connection,
-      //   programId,
-      //   realm.pubkey,
-      // );
+      if (ix == null) {
+        continue;
+      }
 
-      // console.log('token owner records length: ', tokenOwnerRecords.length);
-      // console.log('token owner records: ', tokenOwnerRecords);
+      const result = getSenderAndReceiverTokenAccounts(
+        tx.transaction.message.accountKeys,
+        ix,
+      );
 
-      // for (const tokenHolder of tokenOwnerRecords) {
-      //   console.log(
-      //     'token holder address: ',
-      //     tokenHolder.account.governingTokenOwner.toBase58(),
-      //   );
-      // }
+      // Found an arb trade
+      if (
+        result &&
+        result.inAmount &&
+        result.minimumOutAmount &&
+        result.inAmount != 'null' &&
+        result.source.toBase58() === result.destination.toBase58() &&
+        parseInt(result.inAmount) < parseInt(result.minimumOutAmount)
+      ) {
+        console.log('source', result.source.toBase58());
+        console.log('destination', result.destination.toBase58());
+        console.log('inAmount', result.inAmount);
+        console.log('minimumOutAmount', result.minimumOutAmount);
+        console.log('tokenProgram', result.tokenProgram.toBase58());
 
-      break;
+        const sourceParsedAccountInfo = await connection.getParsedAccountInfo(
+          result.source,
+        );
+        const destinationParsedAccountInfo =
+          await connection.getParsedAccountInfo(result.destination);
+
+        if (
+          (sourceParsedAccountInfo.value?.data as ParsedAccountData) &&
+          (destinationParsedAccountInfo.value?.data as ParsedAccountData)
+        ) {
+          console.log(
+            'sourceParsedAccountInfo.parsed: ',
+            (sourceParsedAccountInfo.value?.data as ParsedAccountData).parsed,
+          );
+          console.log(
+            'destinationParsedAccountInfo.parsed: ',
+            (destinationParsedAccountInfo.value?.data as ParsedAccountData)
+              .parsed,
+          );
+
+          const tokenMint = (
+            destinationParsedAccountInfo.value?.data as ParsedAccountData
+          ).parsed.info.mint;
+
+          const tokenData = tokensList.find(
+            ({ address }) => address === tokenMint,
+          );
+
+          console.log('tokenData', tokenData);
+        }
+        // console.log("sourceParsedAccountInfo: ", sourceParsedAccountInfo);
+      }
     }
   }
 }
