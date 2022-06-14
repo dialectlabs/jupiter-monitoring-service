@@ -245,7 +245,7 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   let epochSchedule = connection.getEpochSchedule();
   const currentSlot = (await epochInfo).slotIndex;
   const secondsToGoBack = JUP_ABR_POLL_TIME_SEC * 2;
-  const slotsToGoBack = secondsToGoBack / 400; // base on 400ms theoretical slot time
+  const slotsToGoBack = (secondsToGoBack*1000) / 400; // base on 400ms theoretical slot time
   const signatures = await connection.getConfirmedSignaturesForAddress(
     jupiterV2ProgramId,
     currentSlot - slotsToGoBack,
