@@ -13,9 +13,10 @@ import type { Instruction } from '@project-serum/anchor';
 import { InstructionDisplay } from '@project-serum/anchor/dist/cjs/coder/borsh/instruction';
 import { TokenInfo, TokenListProvider } from '@solana/spl-token-registry';
 import { token } from '@project-serum/anchor/dist/cjs/utils';
+import { JUP_ABR_POLL_TIME_SEC } from './monitoring.service';
 
-// TODO add any important arbitrage data required for tweet
 export interface ArbTradeData {
+  txSignature: string;
   tx: anchor.web3.ParsedTransactionWithMeta;
   source: PublicKey;
   destination: PublicKey;
@@ -238,17 +239,27 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   const jupiterV2ProgramId = new PublicKey(
     'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo',
   );
-
-  const signatures = await connection.getConfirmedSignaturesForAddress2(
+  
+  // make sure we get all signatures since atleast the last time we polled
+  let epochInfo = connection.getEpochInfo();
+  let epochSchedule = connection.getEpochSchedule();
+  const currentSlot = (await epochInfo).slotIndex;
+  const secondsToGoBack = JUP_ABR_POLL_TIME_SEC * 2;
+  const slotsToGoBack = secondsToGoBack / 400; // base on 400ms theoretical slot time
+  const signatures = await connection.getConfirmedSignaturesForAddress(
     jupiterV2ProgramId,
+    currentSlot - slotsToGoBack,
+    currentSlot
   );
 
   console.log('signatures: ', signatures.length);
 
+  
+
   const txs = await Promise.all(
     signatures.map(
       async (signature) =>
-        await connection.getParsedConfirmedTransaction(signature.signature),
+        await connection.getParsedConfirmedTransaction(signature),
     ),
   );
 
@@ -327,8 +338,8 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
 
           console.log('tokenData', tokenData);
 
-          // TODO verify all necessary arbitrage data returned
           arbTrades.push({
+            txSignature: signatures[i],
             tx: tx,
             source: result.source,
             destination: result.destination,

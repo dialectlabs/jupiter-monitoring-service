@@ -21,6 +21,8 @@ import {
 import { Duration } from 'luxon';
 import { TokenInfo } from '@solana/spl-token-registry';
 
+export const JUP_ABR_POLL_TIME_SEC = 60;
+
 interface JupiterArbitrageTrades {
   arbTrades: ArbTradeData[];
 }
@@ -50,12 +52,12 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       .defineDataSource<JupiterArbitrageTrades>()
       .poll(
         async () => this.getJupArbTradeData(),
-        Duration.fromObject({ seconds: 30 }),
+        Duration.fromObject({ seconds: JUP_ABR_POLL_TIME_SEC }),
       )
       .transform<ArbTradeData[], ArbTradeData[]>({
         keys: ['arbTrades'],
-        // TODO compare unique transaction signature, confirm if this is signatures[0]
-        pipelines: [Pipelines.added((p1, p2) => p1.tx.transaction.signatures[0] === p2.tx.transaction.signatures[0])],
+        // TODO confirm compareBy for added
+        pipelines: [Pipelines.added((p1, p2) => p1.txSignature === p2.txSignature)],
       })
       .notify()
       .custom(
@@ -84,8 +86,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     return [
       ...jupArbTrades.arbTrades.map(
         (it) => {
-          // TODO add useful details about arb trade opportunity
-          return `📈 📉 New arbitrage trade found on Jupiter for ${it.tokenData.symbol}`;
+          return `📈 📉 New arbitrage trade found on Jupiter for ${parseInt(it.minimumOutAmount) - parseInt(it.inAmount)} ${it.tokenData.symbol}`;
         },
       ),
     ].join('\n');
