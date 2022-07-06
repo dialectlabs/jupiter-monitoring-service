@@ -6,7 +6,7 @@ import {
   PublicKey,
   PartiallyDecodedInstruction,
 } from '@solana/web3.js';
-import { IDL } from '../../idl/jupiter';
+import { IDL } from '../idl/jupiter';
 import { BorshCoder } from '@project-serum/anchor';
 import type { ParsedAccountData } from '@solana/web3.js';
 import type { Instruction } from '@project-serum/anchor';
@@ -239,7 +239,7 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   const jupiterV2ProgramId = new PublicKey(
     'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo',
   );
-  
+
   // make sure we get all signatures since atleast the last time we polled
   let epochInfo = connection.getEpochInfo();
   let epochSchedule = connection.getEpochSchedule();
@@ -254,7 +254,7 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
 
   console.log('signatures: ', signatures.length);
 
-  
+
 
   const txs = await Promise.all(
     signatures.map(

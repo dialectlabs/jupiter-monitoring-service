@@ -6,7 +6,7 @@ import {
   PublicKey,
   PartiallyDecodedInstruction,
 } from '@solana/web3.js';
-import { IDL } from '../idl/jupiter';
+import { IDL } from '../src/idl/jupiter';
 import { BorshCoder } from '@project-serum/anchor';
 import type { ParsedAccountData } from '@solana/web3.js';
 import type { Instruction } from '@project-serum/anchor';
