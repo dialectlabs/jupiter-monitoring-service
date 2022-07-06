@@ -4,8 +4,8 @@ metadata:
   annotations:
     deployment.kubernetes.io/revision: "16"
   labels:
-    app: realms-monitoring-service-mainnet-prod
-  name: realms-monitoring-service-mainnet-prod
+    app: jupiter-monitoring-service-mainnet
+  name: jupiter-monitoring-service-mainnet
   namespace: default
   resourceVersion: "65918483"
 spec:
@@ -14,7 +14,7 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: realms-monitoring-service-mainnet-prod
+      app: jupiter-monitoring-service-mainnet
   strategy:
     rollingUpdate:
       maxSurge: 25%
@@ -24,7 +24,7 @@ spec:
     metadata:
       creationTimestamp: null
       labels:
-        app: realms-monitoring-service-mainnet-prod
+        app: jupiter-monitoring-service-mainnet
     spec:
       containers:
       - env:
@@ -38,31 +38,31 @@ spec:
         - name: PRIVATE_KEY
           valueFrom:
             secretKeyRef:
-              key: REALMS_MESSAGING_PRIVATE_KEY_MAINNET
+              key: JUPITER_MESSAGING_PRIVATE_KEY_MAINNET
               name: env-vars
         - name: TWITTER_APP_KEY
           valueFrom:
             secretKeyRef:
-              key: REALMS_TWITTER_APP_KEY
+              key: JUPITER_TWITTER_APP_KEY
               name: env-vars
         - name: TWITTER_APP_SECRET
           valueFrom:
             secretKeyRef:
-              key: REALMS_TWITTER_APP_SECRET
+              key: JUPITER_TWITTER_APP_SECRET
               name: env-vars
         - name: TWITTER_ACCESS_TOKEN
           valueFrom:
             secretKeyRef:
-              key: REALMS_TWITTER_ACCESS_TOKEN
+              key: JUPITER_TWITTER_ACCESS_TOKEN
               name: env-vars
         - name: TWITTER_ACCESS_SECRET
           valueFrom:
             secretKeyRef:
-              key: REALMS_TWITTER_ACCESS_SECRET
+              key: JUPITER_TWITTER_ACCESS_SECRET
               name: env-vars
-        image: dialectlab/realms-monitoring-service:0.1.0
+        image: dialectlab/jupiter-monitoring-service:0.1.0
         imagePullPolicy: Always
-        name: realms-monitoring-service-mainnet-prod
+        name: jupiter-monitoring-service-mainnet
         resources: {}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
