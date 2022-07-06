@@ -246,11 +246,12 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   const currentSlot = (await epochInfo).slotIndex;
   const secondsToGoBack = JUP_ABR_POLL_TIME_SEC * 2;
   const slotsToGoBack = (secondsToGoBack*1000) / 400; // base on 400ms theoretical slot time
-  const signatures = await connection.getConfirmedSignaturesForAddress(
-    jupiterV2ProgramId,
-    currentSlot - slotsToGoBack,
-    currentSlot
-  );
+  // const signatures = await connection.getConfirmedSignaturesForAddress(
+  //   jupiterV2ProgramId,
+  //   currentSlot - slotsToGoBack,
+  //   currentSlot
+  // );
+  const signatures = await connection.getConfirmedSignaturesForAddress2(jupiterV2ProgramId);
 
   console.log('signatures: ', signatures.length);
 
@@ -259,7 +260,8 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   const txs = await Promise.all(
     signatures.map(
       async (signature) =>
-        await connection.getParsedConfirmedTransaction(signature),
+        //await connection.getParsedConfirmedTransaction(signature.signature),
+        await connection.getParsedTransaction(signature.signature),
     ),
   );
 
@@ -339,7 +341,7 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
           console.log('tokenData', tokenData);
 
           arbTrades.push({
-            txSignature: signatures[i],
+            txSignature: signatures[i].signature,
             tx: tx,
             source: result.source,
             destination: result.destination,
