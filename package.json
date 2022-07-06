@@ -36,7 +36,7 @@
     "@saberhq/token-utils": "^1.11.3",
     "@solana/spl-token": "^0.1.8",
     "@solana/spl-token-registry": "^0.2.4362",
-    "@solana/web3.js": "1.31.0",
+    "@solana/web3.js": "^1.47.3",
     "@switchboard-xyz/switchboard-api": "^0.2.180",
     "axios": "^0.26.1",
     "class-transformer": "^0.5.1",
