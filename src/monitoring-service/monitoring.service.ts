@@ -21,7 +21,7 @@ import {
 import { Duration } from 'luxon';
 import { TokenInfo } from '@solana/spl-token-registry';
 
-export const JUP_ABR_POLL_TIME_SEC = 60;
+export const JUP_ABR_POLL_TIME_SEC = 1;//60;
 
 interface JupiterArbitrageTrades {
   arbTrades: ArbTradeData[];
