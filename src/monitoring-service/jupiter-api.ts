@@ -14,6 +14,7 @@ import { InstructionDisplay } from '@project-serum/anchor/dist/cjs/coder/borsh/i
 import { TokenInfo, TokenListProvider } from '@solana/spl-token-registry';
 import { token } from '@project-serum/anchor/dist/cjs/utils';
 import { JUP_ABR_POLL_TIME_SEC } from './monitoring.service';
+import { sign } from 'crypto';
 
 export interface ArbTradeData {
   txSignature: string;
@@ -239,23 +240,20 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   const jupiterV2ProgramId = new PublicKey(
     'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo',
   );
+  
+  let signatures = await connection.getConfirmedSignaturesForAddress2(jupiterV2ProgramId);
 
-  // make sure we get all signatures since atleast the last time we polled
-  let epochInfo = connection.getEpochInfo();
-  let epochSchedule = connection.getEpochSchedule();
-  const currentSlot = (await epochInfo).slotIndex;
-  const secondsToGoBack = JUP_ABR_POLL_TIME_SEC * 2;
-  const slotsToGoBack = (secondsToGoBack*1000) / 400; // base on 400ms theoretical slot time
-  // const signatures = await connection.getConfirmedSignaturesForAddress(
-  //   jupiterV2ProgramId,
-  //   currentSlot - slotsToGoBack,
-  //   currentSlot
-  // );
-  const signatures = await connection.getConfirmedSignaturesForAddress2(jupiterV2ProgramId);
+  // concat together several more calls
+  // NOTE / TODO: As of July 2022, this appears to catch all jupiterV2ProgramId transaction with JUP_ABR_POLL_TIME_SEC at 1 sec
+  //   In the future, if jupiterV2ProgramId transactions increase significantly, should continue concating transactions
+  //   back in time by simply adding more lines like below. Each time we do this, it grabs the next 1000 signatures
+  //   back in time, per getConfirmedSignaturesForAddress2 documentation
+  signatures = signatures.concat(await connection.getConfirmedSignaturesForAddress2(jupiterV2ProgramId, { before: signatures[signatures.length - 1].signature }));
 
   console.log('signatures: ', signatures.length);
-
-
+  signatures.map((sig) => {
+    console.log(`${sig.slot}, ${sig.signature}`);
+  });
 
   const txs = await Promise.all(
     signatures.map(
@@ -271,8 +269,7 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
 
   const tokensList = allTokens.filterByClusterSlug('mainnet-beta').getList();
 
-  console.log('txs: ', txs[0]?.transaction.message);
-
+  //console.log('txs: ', txs[0]?.transaction.message);
   // const transactions = await connection.getTransaction(signatures[0].signature);
 
   console.log('done fetching transactions we have ', txs.length);
