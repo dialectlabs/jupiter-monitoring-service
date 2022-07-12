@@ -299,7 +299,7 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
       }
 
       if (i < 5) {
-        console.log(`${1}'th tx info:`);
+        console.log(`${i}'th tx info:`);
         console.log({tx});
         console.log({ix});
         console.log({result});
@@ -314,6 +314,7 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
         result.source.toBase58() === result.destination.toBase58() &&
         parseInt(result.inAmount) < parseInt(result.minimumOutAmount)
       ) {
+        console.log('Found a new arb trade:');
         console.log('source', result.source.toBase58());
         console.log('destination', result.destination.toBase58());
         console.log('inAmount', result.inAmount);
