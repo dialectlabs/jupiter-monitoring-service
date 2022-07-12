@@ -250,10 +250,10 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   //   back in time, per getConfirmedSignaturesForAddress2 documentation
   signatures = signatures.concat(await connection.getConfirmedSignaturesForAddress2(jupiterV2ProgramId, { before: signatures[signatures.length - 1].signature }));
 
-  console.log('signatures: ', signatures.length);
-  signatures.map((sig) => {
-    console.log(`${sig.slot}, ${sig.signature}`);
-  });
+  console.log(`Done fetching ${signatures.length} signatures.`);
+  // signatures.map((sig) => {
+  //   console.log(`${sig.slot}, ${sig.signature}`);
+  // });
 
   const txs = await Promise.all(
     signatures.map(
@@ -269,11 +269,12 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
 
   const tokensList = allTokens.filterByClusterSlug('mainnet-beta').getList();
 
-  //console.log('txs: ', txs[0]?.transaction.message);
+  console.log(`Done fetching ${txs.length} transactions.`);
+
+  console.log('txs[0]?.transaction.message: ', txs[0]?.transaction.message);
   // const transactions = await connection.getTransaction(signatures[0].signature);
 
-  console.log('done fetching transactions we have ', txs.length);
-
+  console.log("Parsing txs to look for arb trades . . .");
   for (let i = 0; i < txs.length; i++) {
     // const signature = signatures[i];
 
@@ -287,10 +288,22 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
         continue;
       }
 
-      const result = getSenderAndReceiverTokenAccounts(
-        tx.transaction.message.accountKeys,
-        ix,
-      );
+      let result = null;
+      try {
+        result = getSenderAndReceiverTokenAccounts(
+          tx.transaction.message.accountKeys,
+          ix,
+        );
+      } catch (error) {
+        console.log(error);
+      }
+
+      if (i < 5) {
+        console.log(`${1}'th tx info:`);
+        console.log({tx});
+        console.log({ix});
+        console.log({result});
+      }
 
       // Found an arb trade
       if (
@@ -353,6 +366,6 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
       }
     }
   }
-  console.log("Found Jupiter arbitrage trades: ", arbTrades);
+  console.log("Found arb trades: ", arbTrades);
   return arbTrades;
 }
