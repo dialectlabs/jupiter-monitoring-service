@@ -240,15 +240,20 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   const jupiterV2ProgramId = new PublicKey(
     'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo',
   );
+  const jupiterV3ProgramId = new PublicKey(
+    'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph',
+  );
+
+  // TODO may need to monitor voth v2 and v3 transactions?
   
-  let signatures = await connection.getConfirmedSignaturesForAddress2(jupiterV2ProgramId);
+  let signatures = await connection.getConfirmedSignaturesForAddress2(jupiterV3ProgramId);
 
   // concat together several more calls
   // NOTE / TODO: As of July 2022, this appears to catch all jupiterV2ProgramId transaction with JUP_ABR_POLL_TIME_SEC at 1 sec
   //   In the future, if jupiterV2ProgramId transactions increase significantly, should continue concating transactions
   //   back in time by simply adding more lines like below. Each time we do this, it grabs the next 1000 signatures
   //   back in time, per getConfirmedSignaturesForAddress2 documentation
-  signatures = signatures.concat(await connection.getConfirmedSignaturesForAddress2(jupiterV2ProgramId, { before: signatures[signatures.length - 1].signature }));
+  signatures = signatures.concat(await connection.getConfirmedSignaturesForAddress2(jupiterV3ProgramId, { before: signatures[signatures.length - 1].signature }));
 
   console.log(`Done fetching ${signatures.length} signatures.`);
   // signatures.map((sig) => {
