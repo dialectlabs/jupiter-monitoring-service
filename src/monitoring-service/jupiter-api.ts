@@ -243,22 +243,20 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   const jupiterV3ProgramId = new PublicKey(
     'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph',
   );
+  const useJupProgram = jupiterV2ProgramId;
 
-  // TODO may need to monitor voth v2 and v3 transactions?
+  // TODO may need to monitor both v2 and v3 transactions?
   
-  let signatures = await connection.getConfirmedSignaturesForAddress2(jupiterV3ProgramId);
+  let signatures = await connection.getConfirmedSignaturesForAddress2(useJupProgram);
 
   // concat together several more calls
   // NOTE / TODO: As of July 2022, this appears to catch all jupiterV2ProgramId transaction with JUP_ABR_POLL_TIME_SEC at 1 sec
   //   In the future, if jupiterV2ProgramId transactions increase significantly, should continue concating transactions
   //   back in time by simply adding more lines like below. Each time we do this, it grabs the next 1000 signatures
   //   back in time, per getConfirmedSignaturesForAddress2 documentation
-  signatures = signatures.concat(await connection.getConfirmedSignaturesForAddress2(jupiterV3ProgramId, { before: signatures[signatures.length - 1].signature }));
+  signatures = signatures.concat(await connection.getConfirmedSignaturesForAddress2(useJupProgram, { before: signatures[signatures.length - 1].signature }));
 
-  console.log(`Done fetching ${signatures.length} signatures.`);
-  // signatures.map((sig) => {
-  //   console.log(`${sig.slot}, ${sig.signature}`);
-  // });
+  console.log(`Done fetching ${signatures.length} most recent sigs for program: ${useJupProgram}`);
 
   const txs = await Promise.all(
     signatures.map(
@@ -267,111 +265,124 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
         await connection.getParsedTransaction(signature.signature),
     ),
   );
-
   const tokenListProvider = new TokenListProvider();
-
   const allTokens = await tokenListProvider.resolve();
-
   const tokensList = allTokens.filterByClusterSlug('mainnet-beta').getList();
 
-  console.log(`Done fetching ${txs.length} transactions.`);
-
-  console.log('txs[0]?.transaction.message: ', txs[0]?.transaction.message);
-  // const transactions = await connection.getTransaction(signatures[0].signature);
-
-  console.log("Parsing txs to look for arb trades . . .");
+  console.log(`Done fetching ${txs.length} txs.`);
+  console.log("Parsing these txs to look for arb trades . . .");
+  let numWithAtleastTwoParsedIx = 0;
+  let numWithMoreThanTwoParsedIx = 0;
   for (let i = 0; i < txs.length; i++) {
     // const signature = signatures[i];
 
+    // TODO must find the first swap ix source and compare with last swap ix source
+    // then if the minimumOutAmount of last swap is greater than inAmount of first swap, we have arb
     const tx = txs[i];
 
     if (tx != null) {
-      const ix = tx.transaction.message
-        .instructions[2] as PartiallyDecodedInstruction;
 
-      if (ix == null) {
-        continue;
-      }
+      const allIx: PartiallyDecodedInstruction[] = tx.transaction.message.instructions.map((ix) => {
+        return ix as PartiallyDecodedInstruction;
+      })
 
-      let result = null;
-      try {
-        result = getSenderAndReceiverTokenAccounts(
-          tx.transaction.message.accountKeys,
-          ix,
-        );
-      } catch (error) {
-        console.log(error);
-      }
+      const allResults: (
+        { source: PublicKey; 
+          destination: PublicKey; 
+          inAmount: string | undefined; 
+          minimumOutAmount: string | undefined; 
+          tokenProgram: PublicKey; }
+         | null 
+         | undefined
+         )[] = 
+      allIx.map(ix => {
+        return getSenderAndReceiverTokenAccounts(tx.transaction.message.accountKeys, ix);
+      })
 
-      if (i < 5) {
-        console.log(`${i}'th tx info:`);
-        console.log({tx});
-        console.log({ix});
-        console.log({result});
-      }
-
-      // Found an arb trade
-      if (
-        result &&
-        result.inAmount &&
-        result.minimumOutAmount &&
-        result.inAmount != 'null' &&
-        result.source.toBase58() === result.destination.toBase58() &&
-        parseInt(result.inAmount) < parseInt(result.minimumOutAmount)
-      ) {
-        console.log('Found a new arb trade:');
-        console.log('source', result.source.toBase58());
-        console.log('destination', result.destination.toBase58());
-        console.log('inAmount', result.inAmount);
-        console.log('minimumOutAmount', result.minimumOutAmount);
-        console.log('tokenProgram', result.tokenProgram.toBase58());
-
-        const sourceParsedAccountInfo = await connection.getParsedAccountInfo(
-          result.source,
-        );
-        const destinationParsedAccountInfo =
-          await connection.getParsedAccountInfo(result.destination);
-
+      let jupSwapIxs = allResults.filter((res) => {
+        return res;
+      });
+      if (jupSwapIxs.length === 2) {
+        numWithAtleastTwoParsedIx++;
+        // console.log(`Able to parse: ${jupSwapIxs.length}`);
+        // console.log({allIx});
+        // console.log({foundResults: jupSwapIxs});
+        // Check if it is an arb trade
         if (
-          (sourceParsedAccountInfo.value?.data as ParsedAccountData) &&
-          (destinationParsedAccountInfo.value?.data as ParsedAccountData)
-        ) {
-          console.log(
-            'sourceParsedAccountInfo.parsed: ',
-            (sourceParsedAccountInfo.value?.data as ParsedAccountData).parsed,
+          jupSwapIxs[0] &&
+          jupSwapIxs[1] &&
+          jupSwapIxs[0].inAmount &&
+          jupSwapIxs[1].minimumOutAmount &&
+          jupSwapIxs[0].source.toBase58() === jupSwapIxs[1].destination.toBase58() &&
+          parseInt(jupSwapIxs[0].inAmount) < parseInt(jupSwapIxs[1].minimumOutAmount)
+        ) { 
+          // Arb trade!
+          console.log('Found a new arb trade:');
+          console.log('source', jupSwapIxs[0].source.toBase58());
+          console.log('destination', jupSwapIxs[1].destination.toBase58());
+          console.log('inAmount', jupSwapIxs[0].inAmount);
+          console.log('minimumOutAmount', jupSwapIxs[1].minimumOutAmount);
+          console.log('tokenProgram', jupSwapIxs[0].tokenProgram.toBase58());
+          console.log('tokenProgram', jupSwapIxs[1].tokenProgram.toBase58());
+
+          const sourceParsedAccountInfo = await connection.getParsedAccountInfo(
+            jupSwapIxs[0].source,
           );
-          console.log(
-            'destinationParsedAccountInfo.parsed: ',
+          const destinationParsedAccountInfo =
+            await connection.getParsedAccountInfo(jupSwapIxs[1].destination);
+
+          if (
+            (sourceParsedAccountInfo.value?.data as ParsedAccountData) &&
             (destinationParsedAccountInfo.value?.data as ParsedAccountData)
-              .parsed,
-          );
+          ) {
+            console.log(
+              'sourceParsedAccountInfo.parsed: ',
+              (sourceParsedAccountInfo.value?.data as ParsedAccountData).parsed,
+            );
+            console.log(
+              'destinationParsedAccountInfo.parsed: ',
+              (destinationParsedAccountInfo.value?.data as ParsedAccountData)
+                .parsed,
+            );
 
-          const tokenMint = (
-            destinationParsedAccountInfo.value?.data as ParsedAccountData
-          ).parsed.info.mint;
+            const tokenMint = (
+              destinationParsedAccountInfo.value?.data as ParsedAccountData
+            ).parsed.info.mint;
 
-          const tokenData = tokensList.find(
-            ({ address }) => address === tokenMint,
-          );
+            const tokenData = tokensList.find(
+              ({ address }) => address === tokenMint,
+            );
 
-          console.log('tokenData', tokenData);
+            console.log('tokenData', tokenData);
 
-          arbTrades.push({
-            txSignature: signatures[i].signature,
-            tx: tx,
-            source: result.source,
-            destination: result.destination,
-            inAmount: result.inAmount,
-            minimumOutAmount: result.minimumOutAmount,
-            tokenProgram: result.tokenProgram,
-            tokenMint: tokenMint,
-            tokenData: tokenData,
-          } as ArbTradeData);
+            arbTrades.push({
+              txSignature: signatures[i].signature,
+              tx: tx,
+              source: jupSwapIxs[0].source,
+              destination: jupSwapIxs[1].destination,
+              inAmount: jupSwapIxs[0].inAmount,
+              minimumOutAmount: jupSwapIxs[1].minimumOutAmount,
+              tokenProgram: jupSwapIxs[0].tokenProgram,
+              tokenMint: tokenMint,
+              tokenData: tokenData,
+            } as ArbTradeData);
         }
-        // console.log("sourceParsedAccountInfo: ", sourceParsedAccountInfo);
+
+      } else if (jupSwapIxs.length > 2) {
+        numWithMoreThanTwoParsedIx++;
       }
+      
     }
   }
+  }
   console.log("Found arb trades: ", arbTrades);
+  console.log(`${arbTrades.length}`);
+  console.log(`${numWithAtleastTwoParsedIx}`);
+  console.log(`${numWithMoreThanTwoParsedIx}`);
   return arbTrades;
 }
+
+// Testing Only - only commit commented out
+// (async () => {
+//   await findJupArbTrades();
+// })()
