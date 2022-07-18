@@ -23,11 +23,6 @@ import { TokenInfo } from '@solana/spl-token-registry';
 
 export const JUP_ABR_POLL_TIME_SEC = 1;
 const SOL_STANDARD_TX_FEE = 5000;
-const SOL_DEC = 0.000000001;
-const jupV2ProgramIdStr = 'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo';
-const jupiterV2ProgramId = new PublicKey(
-  jupV2ProgramIdStr,
-);
 const jupV3ProgramIdStr = 'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph';
 const jupiterV3ProgramId = new PublicKey(
   jupV3ProgramIdStr,
@@ -38,11 +33,11 @@ interface JupiterArbitrageTrades {
 }
 
 @Injectable()
-export class MonitoringService implements OnModuleInit, OnModuleDestroy {
+export class JupV3ArbMonitoringService implements OnModuleInit, OnModuleDestroy {
   private readonly twitterNotificationSink: NotificationSink<TwitterNotification> =
     new TwitterNotificationsSink();
 
-  private readonly logger = new Logger(MonitoringService.name);
+  private readonly logger = new Logger(JupV3ArbMonitoringService.name);
 
   constructor(private readonly dialectConnection: DialectConnection) {}
 
@@ -73,7 +68,10 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         (val) => {
           const tokenData: TokenInfo = val.context.origin.arbTrades[0].tokenData;
           const message = this.constructMessage(val.context.origin);
-          this.logger.log(`Pushing notif with ${val.context.origin.arbTrades.length} arbs to twitter sink. ${val.context.origin.arbTrades[0].txSignature}`);
+          this.logger.log(`Pushing notif with ${val.context.origin.arbTrades.length} arbs to twitter sink:\n
+          Sigs:\n
+          ${val.context.origin.arbTrades[0].txSignature}
+          ${val.context.origin.arbTrades[1].txSignature}`);
           //this.logger.log(message);
           return {
             message,
@@ -82,7 +80,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         this.twitterNotificationSink,
         {
           dispatch: 'unicast',
-          to: (val) => new PublicKey(jupV2ProgramIdStr),
+          to: (val) => new PublicKey(jupV3ProgramIdStr),
         }
       )
       .and()
@@ -97,12 +95,11 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       ...jupArbTrades.arbTrades.map(
         (it) => {
           //console.log(`Constructing new tweet message for arb trade: ${it}`);
-          let jupVersion = it.jupProgramId.toBase58() === jupV2ProgramIdStr ? 'v2' :
-          it.jupProgramId.toBase58() === jupV3ProgramIdStr ? 'v3' : '';
+          let jupVersion = 'v3';
           const profit = (parseInt(it.minimumOutAmount) - parseInt(it.inAmount)) / (10 ** it.tokenData.decimals);
-          let notifMsg = `📈 📉 New arbitrage trade made on Jupiter ${jupVersion} for a profit of ${profit} ${it.tokenData.symbol}.`;
+          let notifMsg = `📈 📉 ${it.tokenData.symbol} arbitrage trade made on Jupiter ${jupVersion} for a profit of ${profit} ${it.tokenData.symbol}.`;
           if (it.tx.meta?.fee && it.tx.meta.fee != SOL_STANDARD_TX_FEE) {
-            notifMsg += `\n🚀 Tx fee was increased to ${it.tx.meta.fee/(10**9)} SOL to boost priority.`;
+            notifMsg += `\nArber increased tx fee was to ${it.tx.meta.fee/(10**9)} SOL to boost priority.`;
           }
           return notifMsg;
         },
@@ -111,15 +108,11 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async getJupArbTradeData(): Promise<SourceData<JupiterArbitrageTrades>[]> {
-    this.logger.log(
-      `Polling for new Jupiter v2 arbitrage trades.`,
-    );
-    let arbTrades: ArbTradeData[] =  await findJupArbTrades(jupiterV2ProgramId);
     
     this.logger.log(
       `Polling for new Jupiter v3 arbitrage trades.`,
     );
-    arbTrades = arbTrades.concat(await findJupArbTrades(jupiterV3ProgramId));
+    let arbTrades: ArbTradeData[] = await findJupArbTrades(jupiterV3ProgramId);
 
     const sourceData: SourceData<JupiterArbitrageTrades> = {
       groupingKey: 'JupiterArbitrageTrades',

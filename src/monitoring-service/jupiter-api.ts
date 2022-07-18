@@ -12,10 +12,6 @@ import type { ParsedAccountData } from '@solana/web3.js';
 import type { Instruction } from '@project-serum/anchor';
 import { InstructionDisplay } from '@project-serum/anchor/dist/cjs/coder/borsh/instruction';
 import { TokenInfo, TokenListProvider } from '@solana/spl-token-registry';
-import { token } from '@project-serum/anchor/dist/cjs/utils';
-import { JUP_ABR_POLL_TIME_SEC } from './monitoring.service';
-import { sign } from 'crypto';
-import { find } from 'rxjs';
 
 export interface ArbTradeData {
   jupProgramId: PublicKey;
@@ -363,8 +359,9 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
             // TODO revisit this logic to decide what tweets are important/interesting.
             // NOTE: artificially limiting number of tweets sent. filtering data for most useful tweets.
             //   Only tweet if irregular fee is used to boost tx priority.
+            const profit = (parseInt(jupSwapIxs[1].minimumOutAmount) - parseInt(jupSwapIxs[0].inAmount)) / (10 ** tokenMint.decimals);
 
-            if (isIrregularFee && arbTrades.length < 2) {
+            if (isIrregularFee && profit > 0.2 && arbTrades.length < 1) {
               arbTrades.push({
                 jupProgramId: jupiterProgramId,
                 txSignature: signatures[i].signature,

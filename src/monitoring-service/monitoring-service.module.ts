@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
-import { MonitoringService } from './monitoring.service';
+import { JupV2ArbMonitoringService } from './jupV2ArbMonitoring.service';
 import { DialectConnection } from './dialect-connection';
+import { JupV3ArbMonitoringService } from './jupV3ArbMonitoring.service';
 
 @Module({
   controllers: [],
@@ -9,7 +10,8 @@ import { DialectConnection } from './dialect-connection';
       provide: DialectConnection,
       useValue: DialectConnection.initialize(),
     },
-    MonitoringService,
+    JupV2ArbMonitoringService,
+    JupV3ArbMonitoringService,
   ],
 })
 export class MonitoringServiceModule {}
