@@ -314,13 +314,13 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
           parseInt(jupSwapIxs[0].inAmount) < parseInt(jupSwapIxs[1].minimumOutAmount)
         ) { 
           // Arb trade!
-          console.log('Found a new arb trade:');
-          console.log('source', jupSwapIxs[0].source.toBase58());
-          console.log('destination', jupSwapIxs[1].destination.toBase58());
-          console.log('inAmount', jupSwapIxs[0].inAmount);
-          console.log('minimumOutAmount', jupSwapIxs[1].minimumOutAmount);
-          console.log('tokenProgram', jupSwapIxs[0].tokenProgram.toBase58());
-          console.log('tokenProgram', jupSwapIxs[1].tokenProgram.toBase58());
+          // console.log('Found a new arb trade:');
+          // console.log('source', jupSwapIxs[0].source.toBase58());
+          // console.log('destination', jupSwapIxs[1].destination.toBase58());
+          // console.log('inAmount', jupSwapIxs[0].inAmount);
+          // console.log('minimumOutAmount', jupSwapIxs[1].minimumOutAmount);
+          // console.log('tokenProgram', jupSwapIxs[0].tokenProgram.toBase58());
+          // console.log('tokenProgram', jupSwapIxs[1].tokenProgram.toBase58());
       
           // Check tx fee
           let isIrregularFee = false;
@@ -340,15 +340,15 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
             (sourceParsedAccountInfo.value?.data as ParsedAccountData) &&
             (destinationParsedAccountInfo.value?.data as ParsedAccountData)
           ) {
-            console.log(
-              'sourceParsedAccountInfo.parsed: ',
-              (sourceParsedAccountInfo.value?.data as ParsedAccountData).parsed,
-            );
-            console.log(
-              'destinationParsedAccountInfo.parsed: ',
-              (destinationParsedAccountInfo.value?.data as ParsedAccountData)
-                .parsed,
-            );
+            // console.log(
+            //   'sourceParsedAccountInfo.parsed: ',
+            //   (sourceParsedAccountInfo.value?.data as ParsedAccountData).parsed,
+            // );
+            // console.log(
+            //   'destinationParsedAccountInfo.parsed: ',
+            //   (destinationParsedAccountInfo.value?.data as ParsedAccountData)
+            //     .parsed,
+            // );
 
             const tokenMint = (
               destinationParsedAccountInfo.value?.data as ParsedAccountData
@@ -358,13 +358,13 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
               ({ address }) => address === tokenMint,
             );
 
-            console.log('tokenData', tokenData);
+            //console.log('tokenData', tokenData);
 
             // TODO revisit this logic to decide what tweets are important/interesting.
             // NOTE: artificially limiting number of tweets sent. filtering data for most useful tweets.
             //   Only tweet if irregular fee is used to boost tx priority.
 
-            if (isIrregularFee && arbTrades.length < 6) {
+            if (isIrregularFee && arbTrades.length < 2) {
               arbTrades.push({
                 jupProgramId: jupiterProgramId,
                 txSignature: signatures[i].signature,

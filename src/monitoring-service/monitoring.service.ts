@@ -73,8 +73,8 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         (val) => {
           const tokenData: TokenInfo = val.context.origin.arbTrades[0].tokenData;
           const message = this.constructMessage(val.context.origin);
-          this.logger.log(`Sending tweet for ${tokenData.symbol} arbitrage trade : ${message}`);
-          this.logger.log(message);
+          this.logger.log(`Pushing notif with ${val.context.origin.arbTrades.length} arbs to twitter sink. ${val.context.origin.arbTrades[0].txSignature}`);
+          //this.logger.log(message);
           return {
             message,
           };
@@ -96,7 +96,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     return [
       ...jupArbTrades.arbTrades.map(
         (it) => {
-          console.log(`Constructing new tweet message for arb trade: ${it}`);
+          //console.log(`Constructing new tweet message for arb trade: ${it}`);
           let jupVersion = it.jupProgramId.toBase58() === jupV2ProgramIdStr ? 'v2' :
           it.jupProgramId.toBase58() === jupV3ProgramIdStr ? 'v3' : '';
           const profit = (parseInt(it.minimumOutAmount) - parseInt(it.inAmount)) / (10 ** it.tokenData.decimals);
