@@ -323,9 +323,11 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
           console.log('tokenProgram', jupSwapIxs[1].tokenProgram.toBase58());
       
           // Check tx fee
+          let isIrregularFee = false;
           if (tx?.meta?.fee && tx?.meta?.fee != 5000) {
             irregularFees.push(tx.meta.fee);
             lastIrregularFee = tx.meta.fee;
+            isIrregularFee = true;
           }
 
           const sourceParsedAccountInfo = await connection.getParsedAccountInfo(
@@ -358,18 +360,24 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
 
             console.log('tokenData', tokenData);
 
-            arbTrades.push({
-              jupProgramId: jupiterProgramId,
-              txSignature: signatures[i].signature,
-              tx: tx,
-              source: jupSwapIxs[0].source,
-              destination: jupSwapIxs[1].destination,
-              inAmount: jupSwapIxs[0].inAmount,
-              minimumOutAmount: jupSwapIxs[1].minimumOutAmount,
-              tokenProgram: jupSwapIxs[0].tokenProgram,
-              tokenMint: tokenMint,
-              tokenData: tokenData,
-            } as ArbTradeData);
+            // TODO revisit this logic to decide what tweets are important/interesting.
+            // NOTE: artificially limiting number of tweets sent. filtering data for most useful tweets.
+            //   Only tweet if irregular fee is used to boost tx priority.
+
+            if (isIrregularFee) {
+              arbTrades.push({
+                jupProgramId: jupiterProgramId,
+                txSignature: signatures[i].signature,
+                tx: tx,
+                source: jupSwapIxs[0].source,
+                destination: jupSwapIxs[1].destination,
+                inAmount: jupSwapIxs[0].inAmount,
+                minimumOutAmount: jupSwapIxs[1].minimumOutAmount,
+                tokenProgram: jupSwapIxs[0].tokenProgram,
+                tokenMint: tokenMint,
+                tokenData: tokenData,
+              } as ArbTradeData);
+            }
         }
 
       } else if (jupSwapIxs.length > 2) {
