@@ -364,7 +364,7 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
             // NOTE: artificially limiting number of tweets sent. filtering data for most useful tweets.
             //   Only tweet if irregular fee is used to boost tx priority.
 
-            if (isIrregularFee) {
+            if (isIrregularFee && arbTrades.length < 6) {
               arbTrades.push({
                 jupProgramId: jupiterProgramId,
                 txSignature: signatures[i].signature,
