@@ -21,7 +21,17 @@ import {
 import { Duration } from 'luxon';
 import { TokenInfo } from '@solana/spl-token-registry';
 
-export const JUP_ABR_POLL_TIME_SEC = 1;//60;
+export const JUP_ABR_POLL_TIME_SEC = 1;
+const SOL_STANDARD_TX_FEE = 5000;
+const SOL_DEC = 0.000000001;
+const jupV2ProgramIdStr = 'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo';
+const jupiterV2ProgramId = new PublicKey(
+  jupV2ProgramIdStr,
+);
+const jupV3ProgramIdStr = 'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph';
+const jupiterV3ProgramId = new PublicKey(
+  jupV3ProgramIdStr,
+);
 
 interface JupiterArbitrageTrades {
   arbTrades: ArbTradeData[];
@@ -56,7 +66,6 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       )
       .transform<ArbTradeData[], ArbTradeData[]>({
         keys: ['arbTrades'],
-        // TODO confirm compareBy for added
         pipelines: [Pipelines.added((p1, p2) => p1.txSignature === p2.txSignature)],
       })
       .notify()
@@ -72,7 +81,8 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         },
         this.twitterNotificationSink,
         {
-          dispatch: 'broadcast'
+          dispatch: 'unicast',
+          to: (val) => new PublicKey(jupV2ProgramIdStr),
         }
       )
       .and()
@@ -86,7 +96,15 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     return [
       ...jupArbTrades.arbTrades.map(
         (it) => {
-          return `📈 📉 New arbitrage trade found on Jupiter for ${parseInt(it.minimumOutAmount) - parseInt(it.inAmount)} ${it.tokenData.symbol}`;
+          console.log(`Constructing new tweet message for arb trade: ${it}`);
+          let jupVersion = it.jupProgramId.toBase58() === jupV2ProgramIdStr ? 'v2' :
+          it.jupProgramId.toBase58() === jupV3ProgramIdStr ? 'v3' : '';
+          const profit = (parseInt(it.minimumOutAmount) - parseInt(it.inAmount)) / (10 ** it.tokenData.decimals);
+          let notifMsg = `📈 📉 New arbitrage trade made on Jupiter ${jupVersion} for a profit of ${profit} ${it.tokenData.symbol}.`;
+          if (it.tx.meta?.fee && it.tx.meta.fee != SOL_STANDARD_TX_FEE) {
+            notifMsg += `\n🚀 Tx fee was increased to ${it.tx.meta.fee/(10**9)} SOL to boost priority.`;
+          }
+          return notifMsg;
         },
       ),
     ].join('\n');
@@ -94,9 +112,15 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
 
   private async getJupArbTradeData(): Promise<SourceData<JupiterArbitrageTrades>[]> {
     this.logger.log(
-      `Getting Jupiter arbitrage trade data.`,
+      `Polling for new Jupiter v2 arbitrage trades.`,
     );
-    const arbTrades: ArbTradeData[] =  await findJupArbTrades();
+    let arbTrades: ArbTradeData[] =  await findJupArbTrades(jupiterV2ProgramId);
+    
+    this.logger.log(
+      `Polling for new Jupiter v3 arbitrage trades.`,
+    );
+    arbTrades = arbTrades.concat(await findJupArbTrades(jupiterV3ProgramId));
+
     const sourceData: SourceData<JupiterArbitrageTrades> = {
       groupingKey: 'JupiterArbitrageTrades',
       data: {

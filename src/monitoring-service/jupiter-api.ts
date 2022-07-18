@@ -15,8 +15,10 @@ import { TokenInfo, TokenListProvider } from '@solana/spl-token-registry';
 import { token } from '@project-serum/anchor/dist/cjs/utils';
 import { JUP_ABR_POLL_TIME_SEC } from './monitoring.service';
 import { sign } from 'crypto';
+import { find } from 'rxjs';
 
 export interface ArbTradeData {
+  jupProgramId: PublicKey;
   txSignature: string;
   tx: anchor.web3.ParsedTransactionWithMeta;
   source: PublicKey;
@@ -234,7 +236,7 @@ function extractSenderAndReceiverTokenAccounts(
   };
 }
 
-export async function findJupArbTrades(): Promise<ArbTradeData[]> {
+export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<ArbTradeData[]> {
   let arbTrades: ArbTradeData[] = [];
   const connection = new Connection(process.env.RPC_URL!);
   const jupiterV2ProgramId = new PublicKey(
@@ -243,20 +245,17 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   const jupiterV3ProgramId = new PublicKey(
     'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph',
   );
-  const useJupProgram = jupiterV2ProgramId;
-
-  // TODO may need to monitor both v2 and v3 transactions?
   
-  let signatures = await connection.getConfirmedSignaturesForAddress2(useJupProgram);
+  let signatures = await connection.getConfirmedSignaturesForAddress2(jupiterProgramId);
 
   // concat together several more calls
-  // NOTE / TODO: As of July 2022, this appears to catch all jupiterV2ProgramId transaction with JUP_ABR_POLL_TIME_SEC at 1 sec
+  // NOTE / TODO: As of July 2022, this appears to catch all jupiter transaction with JUP_ABR_POLL_TIME_SEC at 1 sec
   //   In the future, if jupiterV2ProgramId transactions increase significantly, should continue concating transactions
   //   back in time by simply adding more lines like below. Each time we do this, it grabs the next 1000 signatures
   //   back in time, per getConfirmedSignaturesForAddress2 documentation
-  signatures = signatures.concat(await connection.getConfirmedSignaturesForAddress2(useJupProgram, { before: signatures[signatures.length - 1].signature }));
+  signatures = signatures.concat(await connection.getConfirmedSignaturesForAddress2(jupiterProgramId, { before: signatures[signatures.length - 1].signature }));
 
-  console.log(`Done fetching ${signatures.length} most recent sigs for program: ${useJupProgram}`);
+  console.log(`Done fetching ${signatures.length} most recent sigs for program: ${jupiterProgramId}`);
 
   const txs = await Promise.all(
     signatures.map(
@@ -273,11 +272,9 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   console.log("Parsing these txs to look for arb trades . . .");
   let numWithAtleastTwoParsedIx = 0;
   let numWithMoreThanTwoParsedIx = 0;
+  let lastIrregularFee = -1;
+  let irregularFees: number[] = [];
   for (let i = 0; i < txs.length; i++) {
-    // const signature = signatures[i];
-
-    // TODO must find the first swap ix source and compare with last swap ix source
-    // then if the minimumOutAmount of last swap is greater than inAmount of first swap, we have arb
     const tx = txs[i];
 
     if (tx != null) {
@@ -324,6 +321,12 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
           console.log('minimumOutAmount', jupSwapIxs[1].minimumOutAmount);
           console.log('tokenProgram', jupSwapIxs[0].tokenProgram.toBase58());
           console.log('tokenProgram', jupSwapIxs[1].tokenProgram.toBase58());
+      
+          // Check tx fee
+          if (tx?.meta?.fee && tx?.meta?.fee != 5000) {
+            irregularFees.push(tx.meta.fee);
+            lastIrregularFee = tx.meta.fee;
+          }
 
           const sourceParsedAccountInfo = await connection.getParsedAccountInfo(
             jupSwapIxs[0].source,
@@ -356,6 +359,7 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
             console.log('tokenData', tokenData);
 
             arbTrades.push({
+              jupProgramId: jupiterProgramId,
               txSignature: signatures[i].signature,
               tx: tx,
               source: jupSwapIxs[0].source,
@@ -376,13 +380,34 @@ export async function findJupArbTrades(): Promise<ArbTradeData[]> {
   }
   }
   console.log("Found arb trades: ", arbTrades);
-  console.log(`${arbTrades.length}`);
-  console.log(`${numWithAtleastTwoParsedIx}`);
-  console.log(`${numWithMoreThanTwoParsedIx}`);
+  console.log(`Total arbs this poll: ${arbTrades.length}`);
+  // console.log(`${numWithAtleastTwoParsedIx}`);
+  // console.log(`${numWithMoreThanTwoParsedIx}`);
+  console.log(`irregular fees: ${irregularFees.length}`);
+  if (irregularFees.length > 0) {
+    let sum = 0;
+    irregularFees.forEach((fee) => {
+      sum += fee;
+    });
+    console.log(`last irregular fee: ${lastIrregularFee}`);
+    console.log(`average irregular fee: ${sum / irregularFees.length}`);
+  }
   return arbTrades;
 }
 
-// Testing Only - only commit commented out
+// Testing Only - only commit if commented out
 // (async () => {
-//   await findJupArbTrades();
+//   const jupiterV2ProgramId = new PublicKey(
+//     'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo',
+//   );
+//   const jupiterV3ProgramId = new PublicKey(
+//     'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph',
+//   );
+//   let arbs: ArbTradeData[] = [];
+//   arbs = await findJupArbTrades(jupiterV2ProgramId);
+
+//   const profit = (parseInt(arbs[0].minimumOutAmount) - parseInt(arbs[0].inAmount)) / (10 ** arbs[0].tokenData.decimals);
+//   console.log(`Profit: ${profit} ${arbs[0].tokenData.symbol}.`);
+//   arbs = arbs.concat(await findJupArbTrades(jupiterV3ProgramId));
+//   console.log(arbs.length);
 // })()
