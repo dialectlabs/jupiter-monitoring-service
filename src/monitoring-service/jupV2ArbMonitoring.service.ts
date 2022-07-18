@@ -99,7 +99,7 @@ export class JupV2ArbMonitoringService implements OnModuleInit, OnModuleDestroy 
           const profit = (parseInt(it.minimumOutAmount) - parseInt(it.inAmount)) / (10 ** it.tokenData.decimals);
           let notifMsg = `📈 📉 ${it.tokenData.symbol} arbitrage trade made on Jupiter ${jupVersion} for a profit of ${profit} ${it.tokenData.symbol}.`;
           if (it.tx.meta?.fee && it.tx.meta.fee != SOL_STANDARD_TX_FEE) {
-            notifMsg += `\nArber increased tx fee was to ${it.tx.meta.fee/(10**9)} SOL to boost priority.`;
+            notifMsg += `\nArber increased tx fee to ${it.tx.meta.fee/(10**9)} SOL to boost priority.`;
           }
           return notifMsg;
         },
