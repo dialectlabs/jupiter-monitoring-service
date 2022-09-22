@@ -12,6 +12,7 @@ import type { ParsedAccountData } from '@solana/web3.js';
 import type { Instruction } from '@project-serum/anchor';
 import { InstructionDisplay } from '@project-serum/anchor/dist/cjs/coder/borsh/instruction';
 import { TokenInfo, TokenListProvider } from '@solana/spl-token-registry';
+import { PythHttpClient, getPythProgramKeyForCluster, PriceStatus } from '@pythnetwork/client';
 
 export interface ArbTradeData {
   jupProgramId: PublicKey;
@@ -25,6 +26,12 @@ export interface ArbTradeData {
   tokenMint: ParsedAccountData;
   tokenData: TokenInfo;
 }
+
+// TODO track whether we miss any tx between polls and log if so
+let previousPollLastTxSig = '';
+
+// TODO store map of cached records of each trade type
+//   wait until some threshold is passed to tweet -- like x arb trades or x amount of time
 
 const accountNamesMapping: any = {
   tokenSwap: {
@@ -241,6 +248,17 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
   const jupiterV3ProgramId = new PublicKey(
     'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph',
   );
+
+  // TODO implement pyth to get USD equivalent of arb trade net when deciding whether to tweet or not
+  // const pythClient = new PythHttpClient(connection, getPythProgramKeyForCluster('mainnet-beta'));
+  // const pythData = await pythClient.getData();
+
+  // for (let symbol of pythData.symbols) {
+  //   const price = pythData.productPrice.get(symbol)!;
+  //   // Sample output:
+  //   // Crypto.SRM/USD: $8.68725 ±$0.0131 Status: Trading
+  //   console.log(`${symbol}: $${price.price} \xB1$${price.confidence} Status: ${PriceStatus[price.status]}`)
+  // }
   
   let signatures = await connection.getConfirmedSignaturesForAddress2(jupiterProgramId);
 
@@ -250,13 +268,13 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
   //   back in time by simply adding more lines like below. Each time we do this, it grabs the next 1000 signatures
   //   back in time, per getConfirmedSignaturesForAddress2 documentation
   signatures = signatures.concat(await connection.getConfirmedSignaturesForAddress2(jupiterProgramId, { before: signatures[signatures.length - 1].signature }));
+  signatures = signatures.concat(await connection.getConfirmedSignaturesForAddress2(jupiterProgramId, { before: signatures[signatures.length - 1].signature }));
 
   console.log(`Done fetching ${signatures.length} most recent sigs for program: ${jupiterProgramId}`);
 
   const txs = await Promise.all(
     signatures.map(
       async (signature) =>
-        //await connection.getParsedConfirmedTransaction(signature.signature),
         await connection.getParsedTransaction(signature.signature),
     ),
   );
@@ -270,10 +288,21 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
   let numWithMoreThanTwoParsedIx = 0;
   let lastIrregularFee = -1;
   let irregularFees: number[] = [];
+  let largestProfit = 0;
+  let largestProfitWithIrrFee = 0;
+  let numFailedTxs = 0;
+  let arbNetMin = 1;
   for (let i = 0; i < txs.length; i++) {
     const tx = txs[i];
 
     if (tx != null) {
+
+      if (tx.meta?.err != null) {
+        numFailedTxs++;
+        const txErr = tx.meta.err;
+        //console.log({txErr});
+        continue;
+      }
 
       const allIx: PartiallyDecodedInstruction[] = tx.transaction.message.instructions.map((ix) => {
         return ix as PartiallyDecodedInstruction;
@@ -357,23 +386,42 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
             //console.log('tokenData', tokenData);
 
             // TODO revisit this logic to decide what tweets are important/interesting.
-            // NOTE: artificially limiting number of tweets sent. filtering data for most useful tweets.
-            //   Only tweet if irregular fee is used to boost tx priority.
-            const profit = (parseInt(jupSwapIxs[1].minimumOutAmount) - parseInt(jupSwapIxs[0].inAmount)) / (10 ** tokenMint.decimals);
+            if (tokenMint && tokenData) {
+              const arbNetAmount = (parseInt(jupSwapIxs[1].minimumOutAmount) - parseInt(jupSwapIxs[0].inAmount)) / (10 ** tokenData?.decimals);
 
-            if (isIrregularFee && profit > 0.2 && arbTrades.length < 1) {
-              arbTrades.push({
-                jupProgramId: jupiterProgramId,
-                txSignature: signatures[i].signature,
-                tx: tx,
-                source: jupSwapIxs[0].source,
-                destination: jupSwapIxs[1].destination,
-                inAmount: jupSwapIxs[0].inAmount,
-                minimumOutAmount: jupSwapIxs[1].minimumOutAmount,
-                tokenProgram: jupSwapIxs[0].tokenProgram,
-                tokenMint: tokenMint,
-                tokenData: tokenData,
-              } as ArbTradeData);
+              console.log(`arb net: ${arbNetAmount} ${tokenData.symbol}`);
+
+              if (arbTrades.length < 1 && arbNetAmount >= arbNetMin && arbNetAmount >= largestProfit) {
+                largestProfit = arbNetAmount;
+                console.log(`${arbNetAmount} ${tokenData.symbol} - ${signatures[i].signature}`);
+                
+                  // arbTrades.push({
+                  //   jupProgramId: jupiterProgramId,
+                  //   txSignature: signatures[i].signature,
+                  //   tx: tx,
+                  //   source: jupSwapIxs[0].source,
+                  //   destination: jupSwapIxs[1].destination,
+                  //   inAmount: jupSwapIxs[0].inAmount,
+                  //   minimumOutAmount: jupSwapIxs[1].minimumOutAmount,
+                  //   tokenProgram: jupSwapIxs[0].tokenProgram,
+                  //   tokenMint: tokenMint,
+                  //   tokenData: tokenData,
+                  // } as ArbTradeData);
+
+                  // only tracking largest profit arb trade for now
+                  arbTrades[0] = {
+                    jupProgramId: jupiterProgramId,
+                    txSignature: signatures[i].signature,
+                    tx: tx,
+                    source: jupSwapIxs[0].source,
+                    destination: jupSwapIxs[1].destination,
+                    inAmount: jupSwapIxs[0].inAmount,
+                    minimumOutAmount: jupSwapIxs[1].minimumOutAmount,
+                    tokenProgram: jupSwapIxs[0].tokenProgram,
+                    tokenMint: tokenMint,
+                    tokenData: tokenData,
+                  } as ArbTradeData;
+              }
             }
         }
 
@@ -384,10 +432,11 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
     }
   }
   }
-  console.log("Found arb trades: ", arbTrades);
-  console.log(`Total arbs this poll: ${arbTrades.length}`);
-  // console.log(`${numWithAtleastTwoParsedIx}`);
-  // console.log(`${numWithMoreThanTwoParsedIx}`);
+  console.log(`Only monitoring trades netting atleast ${arbNetMin}`);
+  console.log("Found arb trades to monitor: ", arbTrades);
+  console.log(`Total: ${arbTrades.length}`);
+  console.log(`${numFailedTxs}/${txs.length} of retrieved TX were failed TX`);
+  console.log(`Largest profit was: ${largestProfit}`);
   console.log(`irregular fees: ${irregularFees.length}`);
   if (irregularFees.length > 0) {
     let sum = 0;
@@ -401,18 +450,30 @@ export async function findJupArbTrades(jupiterProgramId: PublicKey): Promise<Arb
 }
 
 // Testing Only - only commit if commented out
-// (async () => {
-//   const jupiterV2ProgramId = new PublicKey(
-//     'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo',
-//   );
-//   const jupiterV3ProgramId = new PublicKey(
-//     'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph',
-//   );
-//   let arbs: ArbTradeData[] = [];
-//   arbs = await findJupArbTrades(jupiterV2ProgramId);
+(async () => {
+  // const jupiterV2ProgramId = new PublicKey(
+  //   'JUP2jxvXaqu7NQY1GmNF4m1vodw12LVXYxbFL2uJvfo',
+  // );
+  // const jupiterV3ProgramId = new PublicKey(
+  //   'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph',
+  // );
+  // let arbs: ArbTradeData[] = [];
+  // arbs = await findJupArbTrades(jupiterV2ProgramId);
 
-//   const profit = (parseInt(arbs[0].minimumOutAmount) - parseInt(arbs[0].inAmount)) / (10 ** arbs[0].tokenData.decimals);
-//   console.log(`Profit: ${profit} ${arbs[0].tokenData.symbol}.`);
-//   arbs = arbs.concat(await findJupArbTrades(jupiterV3ProgramId));
-//   console.log(arbs.length);
-// })()
+  const connection = new Connection(process.env.RPC_URL!);
+  const pythClient = new PythHttpClient(connection, getPythProgramKeyForCluster('mainnet-beta'));
+  const pythData = await pythClient.getData();
+  console.log(pythData.productFromSymbol);
+
+  // for (let symbol of pythData.symbols) {
+  //   const price = pythData.productPrice.get(symbol)!;
+  //   // Sample output:
+  //   // Crypto.SRM/USD: $8.68725 ±$0.0131 Status: Trading
+  //   console.log(`${symbol}: $${price.price} \xB1$${price.confidence} Status: ${PriceStatus[price.status]}`)
+  // }
+
+  // const profit = (parseInt(arbs[0].minimumOutAmount) - parseInt(arbs[0].inAmount)) / (10 ** arbs[0].tokenData.decimals);
+  // console.log(`Profit: ${profit} ${arbs[0].tokenData.symbol}.`);
+  // arbs = arbs.concat(await findJupArbTrades(jupiterV3ProgramId));
+  // console.log(arbs.length);
+})()

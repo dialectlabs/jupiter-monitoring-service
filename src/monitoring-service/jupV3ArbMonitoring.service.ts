@@ -91,6 +91,10 @@ export class JupV3ArbMonitoringService implements OnModuleInit, OnModuleDestroy 
   private constructMessage(
     jupArbTrades: JupiterArbitrageTrades,
   ): string {
+    let msg = `x SYMBOL arb trades on JupV3 in the past x hours.\n
+    Top net: x SYMBOL\n
+    Avg net: x SYMBOL\n
+    Avg tx fee: x SYMBOL`;
     return [
       ...jupArbTrades.arbTrades.map(
         (it) => {
